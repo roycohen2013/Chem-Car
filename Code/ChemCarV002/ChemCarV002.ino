@@ -82,12 +82,12 @@ PS2 mouse(6, 5);  // Pin 5 is the mouse data pin, pin 6 is the clock pin
 
 
 byte mstat;
-byte mx;
-byte my;
+char mx;
+char my;
 byte mResolution;
 byte mSamplingRate;
 
-long distanceTraveledDots = 0;
+double distanceTraveledDots = 0;
 long distanceTraveledInch = 0;
 long lastMouseRequest = 0;
 
@@ -121,7 +121,7 @@ void setup()
 void loop()
 {
   requestMouseData();
-  printMouseData();
+  //printMouseData();
  
  
    if (stringComplete) {

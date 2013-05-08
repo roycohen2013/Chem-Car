@@ -27,10 +27,30 @@ void mouse_init()
   delayMicroseconds(100);
 }
 
+
+
+
+
+
+
 void setup()
 {
   Serial.begin(9600);
   mouse_init();
+  
+    mouse.write(0xE8);  // tell sensor to set resolution
+    mouse.read();      // ignore ack
+    mouse.write(0x01);  // sends resolution value to mouse. New DPI = 500
+  
+  
+   mouse.write(0xF3);  // give me data!
+  mouse.read();      // ignore ack
+    mouse.write(0xC8);  // give me data!
+     // mouse.read();      // ignore ack
+
+  
+  
+  
 }
 
 /*
@@ -40,22 +60,37 @@ void setup()
 void loop()
 {
   char mstat;
-  char mx;
-  char my;
-
+  byte mx;
+  byte my;
+  
+  
   /* get a reading from the mouse */
   mouse.write(0xeb);  // give me data!
   mouse.read();      // ignore ack
-   = mouse.read();
-  mx = mouse.read();
+  mstat = mouse.read();
+  
+  mouse.read();
+  //mx = mouse.read();
   my = mouse.read();
+  
+  
+
+  
+ // mx = mx << 1;
+  //my = my << 1; 
+  
+ 
 
   /* send the data back up */
+  
   Serial.print(mstat, BIN);
   Serial.print("\tX=");
   Serial.print(mx, DEC);
+  
   Serial.print("\tY=");
   Serial.print(my, DEC);
+  
   Serial.println();
+ 
 //  delay(20);  /* twiddle */
 }

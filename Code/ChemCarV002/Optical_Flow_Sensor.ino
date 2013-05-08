@@ -22,6 +22,7 @@ void requestMouseData(){
   my = mouse.read();
 
   lastMouseRequest = millis();
+  calculateVehicleDistance();
   
 }
 
@@ -34,6 +35,8 @@ void printMouseData(){
   Serial.print("\tY=");
   Serial.print(my, DEC);
   Serial.println(); 
+  
+  
 }
 
 
@@ -69,6 +72,8 @@ void printMouseStatus(){
  }
  
  void calculateVehicleDistance(){
-   distanceTraveledDots = distanceTraveledDots + mx;
+   distanceTraveledDots = distanceTraveledDots + my;
+   Serial.print("distance dots");
+   Serial.println(distanceTraveledDots);
  //  distanceTraveledInch = distanceTraveledDots /  @@ MOUSE RESOLUTION @@  
  }

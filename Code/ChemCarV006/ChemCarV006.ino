@@ -78,10 +78,6 @@
 
 
 
-PS2 mouse(MOUSE_CLOCK_PIN, MOUSE_DATA_PIN);  // Pin 5 is the mouse data pin, pin 6 is the clock pin mouse(clock, data)
-
-Servo magneticMixer;  // create servo object to control a servo
-Servo releaseValve;  // create servo object to control a servo
 
 
 
@@ -92,7 +88,7 @@ char mx;        // this is the distance on the X axis the mouse traveled since i
 char my;        //this is the distance on the Y axis the mouse traveled since its last data request.(delta Y)  Every time the register for X or Y is read from the mouse it erases
 char mResolution;   //the PAW3402 has three resolutions which are 500/800/1000 DPI. This variable is read straight from the chip so it will give you the corresponding values of 1 , 2, or 3
 char mSamplingRate;  // the default sampling rate of the mouse is 100 cycles a second and does not affect us
-double  dpi;      //This is the current DPI (dots per inch) of the mouse and is used to convert from the distance in dots to distance in inches.
+int  dpi = 800;      //This is the current DPI (dots per inch) of the mouse and is used to convert from the distance in dots to distance in inches.
 
 long distanceTraveledDotsX = 0;          // the distance the vehicle traveled in DPI before any conversion is done
 long distanceTraveledDotsY = 0;          // the distance the vehicle traveled in DPI before any conversion is done
@@ -101,9 +97,13 @@ double distanceTraveledInchY = 0;          // the distance the vehicle traveled 
 
 long lastMouseRequest = 0;              //last time the arduino requested dX from the mouse. Timer counts from the second the processor is turned on
 
-int vehicleSpeedX = 0;     //inches/second       // this is the vehicles speed calculated from dX/dt
-int vehicleSpeedY = 0;     //inches/second       // this is the vehicles speed calculated from dy/dt
+double vehicleSpeedX = 0;     //inches/second       // this is the vehicles speed calculated from dX/dt
+double vehicleSpeedY = 0;     //inches/second       // this is the vehicles speed calculated from dy/dt
+double motorPower = 0;
+double targetVelocity = 0; 
 
+
+boolean motorArmed = true;
 
 int sensorValue = 0; 
 
@@ -120,8 +120,20 @@ boolean buttonPressedFlag = false;
 
 
 
+
 String inputString = "";         // a string to hold incoming data (from user) 
 boolean stringComplete = false;  // whether the string is complete (has a carriage return)
+
+
+
+PS2 mouse(MOUSE_CLOCK_PIN, MOUSE_DATA_PIN);  // Pin 5 is the mouse data pin, pin 6 is the clock pin mouse(clock, data)
+
+Servo magneticMixer;  // create servo object to control a servo
+Servo releaseValve;  // create servo object to control a servo
+
+//Specify the links and initial tuning parameters
+PID myPID(&vehicleSpeedY, &motorPower, &targetVelocity,2,20,1, DIRECT);
+
 
 
 void setup()
@@ -131,44 +143,60 @@ void setup()
   //myservo.attach(9);
 
 
-  Serial.begin(9600);
+
+
+  Serial.begin(115200);
 
 
   int byteHigh = 0;
   int byteLow = 0;
   int startingInt= 500;
 
-  Serial.println(startingInt);
+  //Serial.println(startingInt);
 
   byteHigh = (startingInt >> 8);
   byteLow = (startingInt << 8) >> 8;
 
-  Serial.println(byteHigh);
-  Serial.println(byteLow);
+  //Serial.println(byteHigh);
+  //Serial.println(byteLow);
 
   startingInt = byteHigh<<8 | byteLow;
 
   //startingInt = byteHigh;
   //startingInt = (startingInt << 8) | byteLow; 
 
-  Serial.println(startingInt);
+  //Serial.println(startingInt);
 
-
-
-  mouse_init();    // resets the mouse and sets it into remote mode
-  //requestMouseData();
-  requestMouseStatus();  // requests the mouse's resolution and sampling rate in order to let us to know how to convert DPI to inches
-  printMouseStatus();
-  //mouse_init();    // resets the mouse and sets it into remote mode
-  delay(100);
-
-
-  pinMode(START_BUTTON_PIN, INPUT_PULLUP); //enebles the internal 20k pull up resistor for use with the button (HIGH = open) (LOW = pressed) 
   
 
-  //fadeInLedArray();  // for cool effect Leds around reaction chamber fade on
-  //spinUpMagMixer();  // for cool effect the magnetic stirring motor slowly whirs up making it sound cool
+  mouse_init();    // resets the mouse and sets it into remote mode
+  
+  
+  //  mouse.write(0xE8);  // tell sensor to set resolution
+  //  mouse.read();      // ignore ack
+  //  mouse.write(0x01);  // sends resolution value to mouse. New DPI = 500
+  
+  
+ // setResolution(0x01);
+  
+  
+  
+  requestMouseStatus();  // requests the mouse's resolution and sampling rate in order to let us to know how to convert DPI to inches
+  
+  printMouseStatus();
+  
+  delay(2000);
+  
+  //requestMouseData();
+  calculateVehicleSpeed();
+  
+  targetVelocity = 0;
 
+  myPID.SetMode(AUTOMATIC);
+
+  delay(100);
+  pinMode(START_BUTTON_PIN, INPUT_PULLUP); //enebles the internal 20k pull up resistor for use with the button (HIGH = open) (LOW = pressed) 
+  
 
 }
 
@@ -186,9 +214,9 @@ void loop()
   //magneticMixer.write(255); //on
 
 
-  requestMouseData();
-  //printMouseData();
 
+  //printMouseData();
+  regulateVelocity(); // requests mouse for data, calculates the velocities and computes motor power acording to PID function
 
 
 
@@ -229,7 +257,13 @@ void loop()
       // wend from off to on:
 
       if(buttonPressedFlag == true) {
-        analogWrite(MOTOR_PIN, 255);
+        
+        motorArmed = true;
+        targetVelocity = 12;
+        
+    Serial.print(" motor Power:  ");
+    Serial.println(motorPower);
+        
       }
 
 
@@ -238,7 +272,7 @@ void loop()
       Serial.println("on");
     } 
     else {
-      spinUpMagMixer();
+      
       magneticMixer.write(255); //on
       Serial.println("magnetic stirr on");
       
@@ -259,17 +293,39 @@ void loop()
 
   sensorValue = analogRead(PHOTOCELL_PIN);  
 
-  if(sensorValue >= reactionThreshold && buttonPressedFlag){
-    //Serial.print("Sensor Val:  "); 
-    //Serial.println(sensorValue); 
+  if((sensorValue >= reactionThreshold) && (buttonPressedFlag == true)){
+    Serial.print("Sensor Val:  "); 
+    Serial.println(sensorValue); 
 
     magneticMixer.write(100); // OFF
-    analogWrite(MOTOR_PIN, 0);  
+    //analogWrite(MOTOR_PIN, 0);
+    //buttonPressedFlag = false;
+    targetVelocity = 0;
+    motorArmed = false;
+    
   }
+//printMouseData();
+
+
+
+}
 
 
 
 
+
+void regulateVelocity(){
+  
+   requestMouseData();
+   printVelocity();
+   myPID.Compute();
+   
+   Serial.println(motorPower);
+   if (motorArmed == true){
+     analogWrite(MOTOR_PIN, motorPower);
+   } else { 
+     analogWrite(MOTOR_PIN, 0);
+   }
 }
 
 
